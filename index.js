@@ -3,6 +3,7 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, Routes, SlashCommandBuilder, REST, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const OpenAI = require('openai');
 const fetch = require('node-fetch');
+const express = require('express'); // ← 追加
 
 const client = new Client({
   intents: [
@@ -15,6 +16,11 @@ const client = new Client({
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+// ✅ HTTPサーバーを起動してRenderのポートスキャンを通す
+const app = express();
+app.get('/', (_, res) => res.send('🤖 Discord GPT Bot is running!'));
+app.listen(process.env.PORT || 3000);
 
 const respondedMessages = new Set();
 
