@@ -31,9 +31,9 @@ function generateGalleryHtml(images) {
         <style>
           body { font-family: sans-serif; background: #f4f4f4; padding: 20px; }
           h1 { text-align: center; }
-          .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+          .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
           .item { background: white; padding: 10px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-          .item img { width: 100%; border-radius: 6px; }
+          .item img { width: 100%; height: auto; max-height: 300px; object-fit: contain; border-radius: 6px; }
           .prompt { font-weight: bold; margin-top: 10px; }
           .timestamp { color: #777; font-size: 0.9em; }
         </style>
