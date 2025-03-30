@@ -3,7 +3,9 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, Routes, SlashCommandBuilder, REST, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const OpenAI = require('openai');
 const fetch = require('node-fetch');
-const express = require('express'); // ← 追加
+const express = require('express');
+const fs = require('fs');
+const path = require('path');
 
 const client = new Client({
   intents: [
@@ -17,9 +19,50 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// ✅ HTTPサーバーを起動してRenderのポートスキャンを通す
 const app = express();
-app.get('/', (_, res) => res.send('🤖 Discord GPT Bot is running!'));
+const galleryFile = path.join(__dirname, 'generated_images.json');
+
+// HTMLテンプレート生成
+function generateGalleryHtml(images) {
+  return `
+    <html>
+      <head>
+        <title>AI Art Gallery</title>
+        <style>
+          body { font-family: sans-serif; background: #f4f4f4; padding: 20px; }
+          h1 { text-align: center; }
+          .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+          .item { background: white; padding: 10px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+          .item img { width: 100%; border-radius: 6px; }
+          .prompt { font-weight: bold; margin-top: 10px; }
+          .timestamp { color: #777; font-size: 0.9em; }
+        </style>
+      </head>
+      <body>
+        <h1>🎨 AI Art Gallery</h1>
+        <div class="gallery">
+          ${images.map(img => `
+            <div class="item">
+              <img src="${img.url}" alt="image">
+              <div class="prompt">${img.prompt}</div>
+              <div class="timestamp">${new Date(img.timestamp).toLocaleString()}</div>
+            </div>
+          `).join('')}
+        </div>
+      </body>
+    </html>
+  `;
+}
+
+// ギャラリー表示
+app.get('/', (_, res) => {
+  fs.readFile(galleryFile, 'utf-8', (err, data) => {
+    if (err) return res.send('🎨 ギャラリーはまだ空です');
+    const images = JSON.parse(data);
+    res.send(generateGalleryHtml(images.reverse()));
+  });
+});
+
 app.listen(process.env.PORT || 3000);
 
 const respondedMessages = new Set();
@@ -67,9 +110,23 @@ client.on('interactionCreate', async (interaction) => {
       });
 
       const imageUrl = res.data[0].url;
+
+      // ギャラリーデータに保存
+      const newImage = {
+        url: imageUrl,
+        prompt,
+        timestamp: new Date().toISOString()
+      };
+
+      let images = [];
+      if (fs.existsSync(galleryFile)) {
+        images = JSON.parse(fs.readFileSync(galleryFile, 'utf-8'));
+      }
+      images.push(newImage);
+      fs.writeFileSync(galleryFile, JSON.stringify(images, null, 2));
+
       const imageRes = await fetch(imageUrl);
       const imageBuffer = await imageRes.buffer();
-
       const file = new AttachmentBuilder(imageBuffer, { name: 'image.png' });
 
       const embed = new EmbedBuilder()
@@ -89,25 +146,12 @@ client.on('interactionCreate', async (interaction) => {
 client.on('messageCreate', async (message) => {
   console.log(`📩 受信: ${message.id} from ${message.author.tag} — ${message.content}`);
 
-  if (message.author.bot) {
-    console.log(`⛔ Botからのメッセージなので無視: ${message.author.tag}`);
-    return;
-  }
-
-  if (!message.mentions.has(client.user)) {
-    console.log('👋 メンションされていないので無視');
-    return;
-  }
-
-  if (respondedMessages.has(message.id)) {
-    console.log('🔁 このメッセージにはすでに返信済みです');
-    return;
-  }
+  if (message.author.bot) return;
+  if (!message.mentions.has(client.user)) return;
+  if (respondedMessages.has(message.id)) return;
 
   respondedMessages.add(message.id);
-
   const prompt = message.content.replace(/<@!?\d+>/, '').trim();
-  console.log(`🧠 ChatGPTへ送信: ${prompt}`);
 
   try {
     const chatCompletion = await openai.chat.completions.create({
@@ -117,17 +161,13 @@ client.on('messageCreate', async (message) => {
     });
 
     const reply = chatCompletion.choices?.[0]?.message?.content ?? '（応答が取得できませんでした）';
-    console.log(`📤 GPT応答: ${reply}`);
     message.reply(reply);
   } catch (error) {
     console.error('❌ OpenAIエラー:', error);
     message.reply('エラーが起きちゃった💦もう一度試してみてね。');
   }
 
-  setTimeout(() => {
-    respondedMessages.delete(message.id);
-    console.log(`🧹 メッセージID削除: ${message.id}`);
-  }, 60 * 1000);
+  setTimeout(() => respondedMessages.delete(message.id), 60 * 1000);
 });
 
 client.login(process.env.DISCORD_TOKEN);
