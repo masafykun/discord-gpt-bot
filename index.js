@@ -18,20 +18,31 @@ const openai = new OpenAI({
 const respondedMessages = new Set();
 
 client.once('ready', () => {
-  console.log(`Logged in as ${client.user.tag}`);
+  console.log(`✅ Logged in as ${client.user.tag}`);
 
-  // メッセージイベント（メンション時のみ反応）
   if (client.listenerCount('messageCreate') === 0) {
     client.on('messageCreate', async (message) => {
-      if (message.author.bot) return;
-      if (!message.mentions.has(client.user)) return;
+      console.log(`📩 受信: ${message.id} from ${message.author.tag} — ${message.content}`);
 
-      // 重複対応：既に返信したメッセージは無視
-      if (respondedMessages.has(message.id)) return;
+      if (message.author.bot) {
+        console.log(`⛔ Botからのメッセージなので無視: ${message.author.tag}`);
+        return;
+      }
+
+      if (!message.mentions.has(client.user)) {
+        console.log('👋 メンションされていないので無視');
+        return;
+      }
+
+      if (respondedMessages.has(message.id)) {
+        console.log('🔁 このメッセージにはすでに返信済みです');
+        return;
+      }
+
       respondedMessages.add(message.id);
 
-      // メンションを除いた本文だけ取り出す
       const prompt = message.content.replace(/<@!?\d+>/, '').trim();
+      console.log(`🧠 ChatGPTへ送信: ${prompt}`);
 
       try {
         const chatCompletion = await openai.chat.completions.create({
@@ -39,15 +50,17 @@ client.once('ready', () => {
           messages: [{ role: 'user', content: prompt }],
         });
 
-        message.reply(chatCompletion.choices[0].message.content);
+        const reply = chatCompletion.choices[0].message.content;
+        console.log(`📤 GPT応答: ${reply}`);
+        message.reply(reply);
       } catch (error) {
-        console.error('Error:', error);
+        console.error('❌ OpenAIエラー:', error);
         message.reply('エラーが起きちゃった💦もう一度試してみてね。');
       }
 
-      // メモリ削減のため1分後に削除
       setTimeout(() => {
         respondedMessages.delete(message.id);
+        console.log(`🧹 メッセージID削除: ${message.id}`);
       }, 60 * 1000);
     });
   }
