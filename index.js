@@ -61,7 +61,7 @@ function generateGalleryHtml(rows) {
               modal.style.display = 'flex';
               modal.style.alignItems = 'center';
               modal.style.justifyContent = 'center';
-              modal.innerHTML = `<img src="${src}" style="max-width:90%; max-height:90%; border-radius:10px; box-shadow:0 0 20px #000">`;
+              modal.innerHTML = '<img src="' + src + '" style="max-width:90%; max-height:90%; border-radius:10px; box-shadow:0 0 20px #000">';
               modal.addEventListener('click', () => modal.remove());
               document.body.appendChild(modal);
             }
