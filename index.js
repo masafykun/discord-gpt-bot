@@ -1,7 +1,8 @@
 // index.js
 require('dotenv').config();
-const { Client, GatewayIntentBits, Routes, SlashCommandBuilder, REST, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Routes, SlashCommandBuilder, REST, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const OpenAI = require('openai');
+const fetch = require('node-fetch');
 
 const client = new Client({
   intents: [
@@ -60,13 +61,18 @@ client.on('interactionCreate', async (interaction) => {
       });
 
       const imageUrl = res.data[0].url;
+      const imageRes = await fetch(imageUrl);
+      const imageBuffer = await imageRes.buffer();
+
+      const file = new AttachmentBuilder(imageBuffer, { name: 'image.png' });
+
       const embed = new EmbedBuilder()
         .setTitle('🧠 DALL·E 画像生成')
         .setDescription(`プロンプト: \`${prompt}\``)
-        .setImage(imageUrl)
+        .setImage('attachment://image.png')
         .setColor(0x00bfff);
 
-      await interaction.editReply({ content: '✅ 画像が完成しました！', embeds: [embed] });
+      await interaction.editReply({ content: '✅ 画像が完成しました！', embeds: [embed], files: [file] });
     } catch (error) {
       console.error('❌ 画像生成エラー:', error);
       await interaction.editReply('画像の生成中にエラーが発生しました…');
