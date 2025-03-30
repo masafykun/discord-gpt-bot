@@ -4,8 +4,9 @@ const { Client, GatewayIntentBits, Routes, SlashCommandBuilder, REST, EmbedBuild
 const OpenAI = require('openai');
 const fetch = require('node-fetch');
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
+const { google } = require('googleapis');
+const fs = require('fs');
 
 const client = new Client({
   intents: [
@@ -19,11 +20,20 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const app = express();
-const galleryFile = path.join(__dirname, 'generated_images.json');
+const SHEET_ID = process.env.SHEET_ID;
+const CREDENTIALS = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 
-// HTMLテンプレート生成
-function generateGalleryHtml(images) {
+const auth = new google.auth.GoogleAuth({
+  credentials: CREDENTIALS,
+  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+});
+
+const sheets = google.sheets({ version: 'v4', auth });
+
+const app = express();
+
+function generateGalleryHtml(rows) {
+  const images = rows.map(([url, prompt, timestamp]) => ({ url, prompt, timestamp }));
   return `
     <html>
       <head>
@@ -33,15 +43,35 @@ function generateGalleryHtml(images) {
           h1 { text-align: center; }
           .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
           .item { background: white; padding: 10px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-          .item img { width: 100%; height: auto; max-height: 300px; object-fit: contain; border-radius: 6px; }
+          .item img { width: 100%; height: auto; max-height: 300px; object-fit: contain; border-radius: 6px; cursor: pointer; }
           .prompt { font-weight: bold; margin-top: 10px; }
           .timestamp { color: #777; font-size: 0.9em; }
         </style>
+        <script>
+          document.addEventListener('click', (e) => {
+            if (e.target.tagName === 'IMG') {
+              const src = e.target.src;
+              const modal = document.createElement('div');
+              modal.style.position = 'fixed';
+              modal.style.top = 0;
+              modal.style.left = 0;
+              modal.style.width = '100%';
+              modal.style.height = '100%';
+              modal.style.background = 'rgba(0,0,0,0.8)';
+              modal.style.display = 'flex';
+              modal.style.alignItems = 'center';
+              modal.style.justifyContent = 'center';
+              modal.innerHTML = `<img src="${src}" style="max-width:90%; max-height:90%; border-radius:10px; box-shadow:0 0 20px #000">`;
+              modal.addEventListener('click', () => modal.remove());
+              document.body.appendChild(modal);
+            }
+          });
+        </script>
       </head>
       <body>
         <h1>🎨 AI Art Gallery</h1>
         <div class="gallery">
-          ${images.map(img => `
+          ${images.reverse().map(img => `
             <div class="item">
               <img src="${img.url}" alt="image">
               <div class="prompt">${img.prompt}</div>
@@ -54,13 +84,18 @@ function generateGalleryHtml(images) {
   `;
 }
 
-// ギャラリー表示
-app.get('/', (_, res) => {
-  fs.readFile(galleryFile, 'utf-8', (err, data) => {
-    if (err) return res.send('🎨 ギャラリーはまだ空です');
-    const images = JSON.parse(data);
-    res.send(generateGalleryHtml(images.reverse()));
-  });
+app.get('/', async (_, res) => {
+  try {
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: 'A2:C',
+    });
+    const rows = result.data.values || [];
+    res.send(generateGalleryHtml(rows));
+  } catch (err) {
+    console.error('❌ スプレッドシート読み込み失敗:', err);
+    res.status(500).send('ギャラリーの読み込み中にエラーが発生しました');
+  }
 });
 
 app.listen(process.env.PORT || 3000);
@@ -70,7 +105,6 @@ const respondedMessages = new Set();
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  // スラッシュコマンド登録
   const commands = [
     new SlashCommandBuilder()
       .setName('image')
@@ -111,19 +145,14 @@ client.on('interactionCreate', async (interaction) => {
 
       const imageUrl = res.data[0].url;
 
-      // ギャラリーデータに保存
-      const newImage = {
-        url: imageUrl,
-        prompt,
-        timestamp: new Date().toISOString()
-      };
-
-      let images = [];
-      if (fs.existsSync(galleryFile)) {
-        images = JSON.parse(fs.readFileSync(galleryFile, 'utf-8'));
-      }
-      images.push(newImage);
-      fs.writeFileSync(galleryFile, JSON.stringify(images, null, 2));
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID,
+        range: 'A:C',
+        valueInputOption: 'RAW',
+        requestBody: {
+          values: [[imageUrl, prompt, new Date().toISOString()]]
+        }
+      });
 
       const imageRes = await fetch(imageUrl);
       const imageBuffer = await imageRes.buffer();
