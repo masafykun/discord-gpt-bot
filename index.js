@@ -15,7 +15,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-let isCooldown = false;
+const respondedMessages = new Set();
 
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
@@ -25,15 +25,13 @@ client.once('ready', () => {
     client.on('messageCreate', async (message) => {
       if (message.author.bot) return;
       if (!message.mentions.has(client.user)) return;
-      if (isCooldown) return;
+
+      // 重複対応：既に返信したメッセージは無視
+      if (respondedMessages.has(message.id)) return;
+      respondedMessages.add(message.id);
 
       // メンションを除いた本文だけ取り出す
       const prompt = message.content.replace(/<@!?\d+>/, '').trim();
-
-      isCooldown = true;
-      setTimeout(() => {
-        isCooldown = false;
-      }, 1000); // 1秒間クールダウン
 
       try {
         const chatCompletion = await openai.chat.completions.create({
@@ -46,6 +44,11 @@ client.once('ready', () => {
         console.error('Error:', error);
         message.reply('エラーが起きちゃった💦もう一度試してみてね。');
       }
+
+      // メモリ削減のため1分後に削除
+      setTimeout(() => {
+        respondedMessages.delete(message.id);
+      }, 60 * 1000);
     });
   }
 });
