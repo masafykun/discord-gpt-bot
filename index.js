@@ -48,9 +48,10 @@ client.once('ready', () => {
         const chatCompletion = await openai.chat.completions.create({
           model: 'gpt-3.5-turbo',
           messages: [{ role: 'user', content: prompt }],
+          n: 1 // 応答は1つだけ取得
         });
 
-        const reply = chatCompletion.choices[0].message.content;
+        const reply = chatCompletion.choices?.[0]?.message?.content ?? '（応答が取得できませんでした）';
         console.log(`📤 GPT応答: ${reply}`);
         message.reply(reply);
       } catch (error) {
